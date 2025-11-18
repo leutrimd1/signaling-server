@@ -1,8 +1,10 @@
 {
   "version": 2,
-  "dgSpecHash": "ydSmGT3ghxE=",
+  "dgSpecHash": "09xpIWQaUKk=",
   "success": true,
   "projectFilePath": "C:\\Users\\Leutrim Dema\\repo\\signaling-server\\signaling-server.csproj",
-  "expectedPackageFiles": [],
+  "expectedPackageFiles": [
+    "C:\\Users\\Leutrim Dema\\.nuget\\packages\\fleck\\1.2.0\\fleck.1.2.0.nupkg.sha512"
+  ],
   "logs": []
 }
