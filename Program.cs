@@ -8,8 +8,6 @@ namespace WebRTCServer
     {
         public required IWebSocketConnection Connection { get; set; }
         public string Offer { get; set; } = "";
-        public string Answer { get; set; } = "";
-        public string TargetSocketGuid { get; set; } = "";
     }
 
     public class Program
@@ -18,46 +16,75 @@ namespace WebRTCServer
         {
             var sockets = new ConcurrentDictionary<Guid, SocketInfo>();
 
-            void Pong()
-            {
-                var pong = new
-                {
-                    type = "Pong"
-                };
-
-                var response = JsonSerializer.Serialize(pong);
-
-            }
+            // ---------------------------------------------
+            // Helper: broadcast all socketGuids + offers
+            // ---------------------------------------------
             void BroadcastServerState()
             {
                 var state = new
                 {
-                    sockets = sockets.Select(kv => new
+                    type = "state",
+                    sockets = sockets.Select((kv) => new
                     {
                         socketGuid = kv.Key.ToString(),
-                        offer = kv.Value.Offer,
-                        answer = kv.Value.Answer,
-                        targetSocketGuid = kv.Value.TargetSocketGuid
+                        offer = kv.Value.Offer
                     }).ToArray()
                 };
 
-                var json = JsonSerializer.Serialize(state);
+                string json = JsonSerializer.Serialize(state);
+
                 foreach (var s in sockets.Values)
                     s.Connection.Send(json);
             }
 
+            // ---------------------------------------------
+            // Helper: send an answer to the target socket
+            // ---------------------------------------------
+            void SendAnswerToTarget(Guid targetGuid, string answer)
+            {
+                if (!sockets.TryGetValue(targetGuid, out var info))
+                    return;
+
+                var msg = new
+                {
+                    type = "answer",
+                    answer = answer
+                };
+
+                info.Connection.Send(JsonSerializer.Serialize(msg));
+            }
+
+            // ---------------------------------------------
+            // WebSocket server
+            // ---------------------------------------------
             var server = new WebSocketServer("ws://0.0.0.0:8181");
+
             server.Start(socket =>
             {
                 Guid id = Guid.NewGuid();
 
+                // -----------------------------------------
+                // On connection open
+                // -----------------------------------------
                 socket.OnOpen = () =>
                 {
                     sockets[id] = new SocketInfo { Connection = socket };
                     Console.WriteLine($"Socket {id} connected");
+
+                    // Send the ID to the client immediately
+                    socket.Send(JsonSerializer.Serialize(new
+                    {
+                        type = "id",
+                        value = id.ToString()
+                    }));
+
+                    // Broadcast immediately about the new socket
                     BroadcastServerState();
                 };
 
+                // -----------------------------------------
+                // On connection close
+                // -----------------------------------------
                 socket.OnClose = () =>
                 {
                     sockets.TryRemove(id, out _);
@@ -65,40 +92,60 @@ namespace WebRTCServer
                     BroadcastServerState();
                 };
 
-                socket.OnMessage = msg =>
+                // -----------------------------------------
+                // On message
+                // -----------------------------------------
+                socket.OnMessage = raw =>
                 {
+                    JsonElement root;
+
                     try
                     {
-                        var root = JsonDocument.Parse(msg).RootElement;
+                        root = JsonDocument.Parse(raw).RootElement;
+                    }
+                    catch
+                    {
+                        return;
+                    }
 
-                        if (root.TryGetProperty("type", out var ping) && ping.ToString() == "ping")
+                    if (!root.TryGetProperty("type", out var typeElement))
+                        return;
+
+                    string type = typeElement.GetString() ?? "";
+
+                    // ---------------------------------------------------
+                    // Handle: client sent an OFFER
+                    // Save it & broadcast state to everyone
+                    // ---------------------------------------------------
+                    if (type == "offer")
+                    {
+                        if (root.TryGetProperty("offer", out var offerProp))
                         {
-                            socket.Send(JsonSerializer.Serialize(new { type = "pong" }));
-                            return;
-                        }
-
-                        if (sockets.TryGetValue(id, out var socketInfo))
-                        {
-                            if (root.TryGetProperty("offer", out var offerProp))
-                                socketInfo.Offer = offerProp.GetString() ?? "";
-
-                            if (root.TryGetProperty("answer", out var answerProp))
-                                socketInfo.Answer = answerProp.GetString() ?? "";
-
-                            if (root.TryGetProperty("targetSocketGuid", out var targetProp))
-                                socketInfo.TargetSocketGuid = targetProp.GetString() ?? "";
+                            if (sockets.TryGetValue(id, out var info))
+                                info.Offer = offerProp.GetString() ?? "";
 
                             BroadcastServerState();
                         }
+                        return;
                     }
-                    catch (JsonException)
+
+                    // ---------------------------------------------------
+                    // Handle: client sent an ANSWER to a target socket
+                    // ---------------------------------------------------
+                    if (type == "answer")
                     {
-                        // ignore invalid JSON
+                        if (root.TryGetProperty("targetSocketGuid", out var targetProp) &&
+                            Guid.TryParse(targetProp.GetString(), out var targetGuid) &&
+                            root.TryGetProperty("answer", out var answerProp))
+                        {
+                            SendAnswerToTarget(targetGuid, answerProp.GetString() ?? "");
+                        }
+                        return;
                     }
                 };
             });
 
-            Console.WriteLine("WebSocket server started on ws://0.0.0.0:8181");
+            Console.WriteLine("WebSocket server running at ws://0.0.0.0:8181");
             new System.Threading.ManualResetEvent(false).WaitOne();
         }
     }
