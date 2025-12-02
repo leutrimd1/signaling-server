@@ -1,0 +1,32 @@
+# Visual Studio / VS Code settings
+.vscode/
+.vs/
+*.suo
+*.user
+*.rsuser
+
+# Logs
+*.log
+
+# NuGet packages (local cache)
+*.nupkg
+*.snupkg
+packages/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Build cache—but KEEP bin/ and obj/
+*.cache
+*.mdb
+*.pdb
+
+# Rider
+.idea/
+
+# Other auto-generated stuff
+*.dbmdl
+*.bak
+*.mdf
+*.ldf

@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("signaling-server")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+601941a4d07799cefbf90f9588b0460077aa25d6")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+3448321c3553fdfc1e9a58a9ee1f7b70d22c4401")]
 [assembly: System.Reflection.AssemblyProductAttribute("signaling-server")]
 [assembly: System.Reflection.AssemblyTitleAttribute("signaling-server")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
