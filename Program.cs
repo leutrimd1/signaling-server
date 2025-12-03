@@ -4,54 +4,68 @@ using System.Collections.Concurrent;
 
 namespace WebRTCServer
 {
-    public class SocketInfo
-    {
-        public required IWebSocketConnection Connection { get; set; }
-        public string Offer { get; set; } = "";
-    }
 
     public class Program
     {
         static void Main()
         {
-            var sockets = new ConcurrentDictionary<Guid, SocketInfo>();
+            var sockets = new ConcurrentDictionary<Guid, IWebSocketConnection>();
 
             // ---------------------------------------------
-            // Helper: broadcast all socketGuids + offers
+            // Helper: broadcast all connected socket Guids
             // ---------------------------------------------
             void BroadcastServerState()
             {
                 var state = new
                 {
                     type = "state",
-                    sockets = sockets.Select((kv) => new
-                    {
-                        socketGuid = kv.Key.ToString(),
-                        offer = kv.Value.Offer
-                    }).ToArray()
+                    sockets = sockets.Keys.Select(guid => guid.ToString()).ToArray()
                 };
 
                 string json = JsonSerializer.Serialize(state);
 
                 foreach (var s in sockets.Values)
-                    s.Connection.Send(json);
+                    s.Send(json);
             }
 
             // ---------------------------------------------
-            // Helper: send an answer to the target socket
+            // Helper: send an answer to the target socket. Takes the target socket guid and sends a message type answer
             // ---------------------------------------------
-            void SendAnswerToTarget(Guid targetGuid, string answer)
+            void SendAnswerToTarget(Guid sourceGuid, Guid targetGuid, string answer)
             {
-                if (!sockets.TryGetValue(targetGuid, out var info))
+                if (!sockets.ContainsKey(targetGuid))
                     return;
 
                 var msg = new
                 {
                     type = "answer",
-                    answer = answer
+                    from = sourceGuid.ToString(),
+                    to = targetGuid.ToString(),
+                    offer = "",
+                    answer
                 };
 
-                info.Connection.Send(JsonSerializer.Serialize(msg));
+                sockets[targetGuid].Send(JsonSerializer.Serialize(msg));
+            }
+
+            // ---------------------------------------------
+            // Helper: send an offer to the target socket. Takes a source and target guid with an offer string to send.
+            // ---------------------------------------------
+            void SendOfferToTarget(Guid sourceGuid, Guid targetGuid, string offer)
+            {
+                if (!sockets.ContainsKey(targetGuid))
+                    return;
+
+                var msg = new
+                {
+                    type = "offer",
+                    from = sourceGuid.ToString(),
+                    to = targetGuid.ToString(),
+                    offer,
+                    answer = ""
+                };
+
+                sockets[targetGuid].Send(JsonSerializer.Serialize(msg));
             }
 
             // ---------------------------------------------
@@ -61,21 +75,21 @@ namespace WebRTCServer
 
             server.Start(socket =>
             {
-                Guid id = Guid.NewGuid();
+                Guid thisSocketGuid = Guid.NewGuid();
 
                 // -----------------------------------------
                 // On connection open
                 // -----------------------------------------
                 socket.OnOpen = () =>
                 {
-                    sockets[id] = new SocketInfo { Connection = socket };
-                    Console.WriteLine($"Socket {id} connected");
+                    sockets[thisSocketGuid] = socket;
+                    Console.WriteLine($"Socket {thisSocketGuid} connected");
 
                     // Send the ID to the client immediately
                     socket.Send(JsonSerializer.Serialize(new
                     {
                         type = "id",
-                        value = id.ToString()
+                        value = thisSocketGuid.ToString()
                     }));
 
                     // Broadcast immediately about the new socket
@@ -87,8 +101,8 @@ namespace WebRTCServer
                 // -----------------------------------------
                 socket.OnClose = () =>
                 {
-                    sockets.TryRemove(id, out _);
-                    Console.WriteLine($"Socket {id} disconnected");
+                    sockets.TryRemove(thisSocketGuid, out _);
+                    Console.WriteLine($"Socket {thisSocketGuid} disconnected");
                     BroadcastServerState();
                 };
 
@@ -102,45 +116,36 @@ namespace WebRTCServer
                     try
                     {
                         root = JsonDocument.Parse(raw).RootElement;
-                    }
-                    catch
-                    {
-                        return;
-                    }
+                        var messageType = root.GetProperty("type").GetString() ?? "";
 
-                    if (!root.TryGetProperty("type", out var typeElement))
-                        return;
-
-                    string type = typeElement.GetString() ?? "";
-
-                    // ---------------------------------------------------
-                    // Handle: client sent an OFFER
-                    // Save it & broadcast state to everyone
-                    // ---------------------------------------------------
-                    if (type == "offer")
-                    {
-                        if (root.TryGetProperty("offer", out var offerProp))
+                        // Handle messages from sockets
+                        if (messageType == "offer")
                         {
-                            if (sockets.TryGetValue(id, out var info))
-                                info.Offer = offerProp.GetString() ?? "";
-
-                            BroadcastServerState();
+                            var targetStr = root.GetProperty("to").GetString();
+                            var offerSdp = root.GetProperty("offer").GetString();
+                            if (Guid.TryParse(targetStr, out Guid targetGuid) && offerSdp != null)
+                            {
+                                Console.WriteLine($"Forwarding offer from {thisSocketGuid} to {targetGuid}");
+                                SendOfferToTarget(thisSocketGuid, targetGuid, offerSdp);
+                            }
+                            return;
                         }
-                        return;
-                    }
 
-                    // ---------------------------------------------------
-                    // Handle: client sent an ANSWER to a target socket
-                    // ---------------------------------------------------
-                    if (type == "answer")
-                    {
-                        if (root.TryGetProperty("targetSocketGuid", out var targetProp) &&
-                            Guid.TryParse(targetProp.GetString(), out var targetGuid) &&
-                            root.TryGetProperty("answer", out var answerProp))
+                        if (messageType == "answer")
                         {
-                            SendAnswerToTarget(targetGuid, answerProp.GetString() ?? "");
+                            var targetStr = root.GetProperty("to").GetString();
+                            var answerSdp = root.GetProperty("answer").GetString();
+                            if (Guid.TryParse(targetStr, out Guid targetGuid) && answerSdp != null)
+                            {
+                                Console.WriteLine($"Forwarding answer from {thisSocketGuid} to {targetGuid}");
+                                SendAnswerToTarget(thisSocketGuid, targetGuid, answerSdp);
+                            }
+                            return;
                         }
-                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error processing message from {thisSocketGuid}: {ex.Message}");
                     }
                 };
             });
