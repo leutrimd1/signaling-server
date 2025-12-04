@@ -30,3 +30,5 @@ packages/
 *.mdf
 *.ldf
 *AssemblyInfo*
+obj/Debug/net10.0/signaling-server.AssemblyInfo.cs
+obj/Debug/net10.0/signaling-server.AssemblyInfoInputs.cache
