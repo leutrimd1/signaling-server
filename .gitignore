@@ -7,7 +7,6 @@
 
 # Logs
 *.log
-
 # NuGet packages (local cache)
 *.nupkg
 *.snupkg
@@ -30,3 +29,4 @@ packages/
 *.bak
 *.mdf
 *.ldf
+*AssemblyInfo*
