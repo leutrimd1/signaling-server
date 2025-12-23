@@ -10,5 +10,5 @@ RUN dotnet publish -c Release -o out
 FROM mcr.microsoft.com/dotnet/runtime:10.0-preview
 WORKDIR /app
 COPY --from=build /app/out .
-EXPOSE 8181
+EXPOSE 80
 ENTRYPOINT ["dotnet", "signaling-server.dll"]
